@@ -1,4 +1,4 @@
-rootProject.name = 'EditPDF'
+rootProject.name = 'PDFMerge'
 
 dependencyResolutionManagement {
   versionCatalogs {

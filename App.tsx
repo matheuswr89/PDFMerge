@@ -1,11 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { useEffect } from 'react';
-import { getFolderPermission } from './src/hooks/permissions';
+import { getFolderPermission, getPermissions } from './src/hooks/permissions';
 import Home from './src/Home';
 
 export default function App() {
   useEffect(() => {
+    getPermissions();
     getFolderPermission();
   }, [])
 

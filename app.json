@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "EditPDF",
-    "slug": "EditPDF",
+    "name": "PDFMerge",
+    "slug": "PDFMerge",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
