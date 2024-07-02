@@ -2,7 +2,6 @@ package com.meanmatheus.editpdf
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.os.ParcelFileDescriptor.MODE_READ_ONLY
@@ -11,6 +10,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -32,38 +32,38 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
     }
 
     @ReactMethod
-    fun editPdf(caminho: String, quantidadeImg: Int, modo: String, promise: Promise) {
-        processPdfOperation(caminho, promise) { fileSelected, document ->
-            if (caminho.endsWith(".pdf")) {
-                if (fileSelected != null) {
-                    pageToImage(fileSelected).forEach { image ->
-                        drawImageInPdf(modo, quantidadeImg, image, document)
+    fun editPdf(caminho: ReadableArray, quantidadeImg: Int, modo: String, promise: Promise) {
+        processPdfOperation(caminho.toArrayList(), promise) { fileSelected, document ->
+            if (fileSelected != null) {
+                if (fileSelected.name.endsWith(".pdf")) {
+                        pageToImage(fileSelected).forEach { image ->
+                            drawImageInPdf(modo, quantidadeImg, image, document)
                     }
+                } else {
+                    val image = BitmapFactory.decodeFile(fileSelected.absolutePath)
+                    drawImageInPdf(modo, quantidadeImg, image, document)
                 }
-            } else {
-                val image = BitmapFactory.decodeFile(fileSelected?.absolutePath)
-                drawImageInPdf(modo, quantidadeImg, image, document)
             }
 
         }
     }
 
     private inline fun processPdfOperation(
-        caminho: String,
+        caminho: java.util.ArrayList<Any>,
         promise: Promise,
         crossinline block: (File?, PDDocument) -> Unit
     ) {
         Thread {
             try {
-                val fileSelected = FileUtils().getFile(caminho, reactApplicationContext)
                 val document = PDDocument()
-                block(fileSelected, document)
-
+                caminho.forEach { cam ->
+                    val fileSelected = FileUtils().getFile(cam as String, reactApplicationContext)
+                    block(fileSelected, document)
+                };
                 FileOutputStream(file).use { out ->
                     document.save(out)
                     out.flush()
                 }
-
                 readAndSendBase64(promise)
             } catch (e: Throwable) {
                 e.printStackTrace()
@@ -83,87 +83,73 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
     }
 
     private fun drawImageInPdf(modo: String, quantidadeImg: Int, image: Bitmap, document: PDDocument) {
-        val pageWidth = if (modo.contains("Retrato")) {
-            PDRectangle.A4.width
+        // Define o tamanho da página com base no modo (Retrato ou Paisagem)
+        val (pageWidth, pageHeight) = if (modo.contains("Retrato")) {
+            PDRectangle.A4.width to PDRectangle.A4.height
         } else {
-            PDRectangle.A4.height
-        }
-        val pageHeight = if (modo.contains("Retrato")) {
-            PDRectangle.A4.height
-        } else {
-            PDRectangle.A4.width
+            PDRectangle.A4.height to PDRectangle.A4.width
         }
         val page = PDPage(PDRectangle(pageWidth, pageHeight))
         document.addPage(page)
 
-        // Calculate number of rows and columns
+        // Calcula o número de linhas e colunas
         val cols = ceil(sqrt(quantidadeImg.toDouble())).toInt()
         val rows = ceil(quantidadeImg.toDouble() / cols).toInt()
 
-        // Calculate maximum image size with margins
-        val margin = 10 // Adjust margin size as needed (in pixels)
+        // Define o tamanho máximo da imagem com margens
+        val margin = 10 // Ajuste o tamanho da margem conforme necessário (em pixels)
         val maxWidth = ((pageWidth - 2 * margin) / cols).toInt()
-        val maxHeight = ((pageHeight - 2 * margin) / rows).toInt() // Adjust for rows
+        val maxHeight = ((pageHeight - 2 * margin) / rows).toInt()
 
-        // Calculate scaling factor
-        val scaleX = 1f.coerceAtMost(maxWidth.toFloat() / image.width.toFloat())
-        val scaleY = 1f.coerceAtMost(maxHeight.toFloat() / image.height.toFloat())
-        val scale = scaleX.coerceAtMost(scaleY) // Use the smaller scaling factor
+        // Calcula o fator de escala
+        val scale = minOf(
+            maxWidth.toFloat() / image.width.toFloat(),
+            maxHeight.toFloat() / image.height.toFloat(),
+            1f
+        )
 
-        val newImageWidth = (image.width * scale).toInt() - 10
-        val newImageHeight = (image.height * scale).toInt() - 10
+        // Novo tamanho da imagem
+        val newImageWidth = (image.width * scale).toInt() - margin
+        val newImageHeight = (image.height * scale).toInt() - margin
 
-        // Create a ByteArrayOutputStream to hold the bitmap bytes
+        // Cria um ByteArrayOutputStream para armazenar os bytes do bitmap
         val outputStream = ByteArrayOutputStream()
 
-        // Compress the bitmap to a PNG format
+        // Comprimi o bitmap no formato PNG
         image.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
 
-        // Create a PDImageXObject from the compressed image bytes
-        val pdImage =
-            PDImageXObject.createFromByteArray(document, outputStream.toByteArray(), "image")
+        // Cria um PDImageXObject a partir dos bytes da imagem comprimida
+        val pdImage = PDImageXObject.createFromByteArray(document, outputStream.toByteArray(), "image")
 
-        // Get the content stream of the page
-        val contentStream = PDPageContentStream(document, page)
+        // Obtém o content stream da página
+        PDPageContentStream(document, page).use { contentStream ->
+            // Desenha as imagens na página
+            var imageCount = 0
+            for (row in 0 until rows) {
+                for (col in 0 until cols) {
+                    if (imageCount >= quantidadeImg) {
+                        break
+                    }
 
-        // Draw images onto the page
-        var imageCount = 0
-        for (row in 0 until rows) {
-            for (col in 0 until cols) {
-                if (imageCount >= quantidadeImg) {
-                    break
+                    val (tempCol, tempRow) = if (modo.contains("Retrato")) {
+                        col to row
+                    } else {
+                        row to col
+                    }
+
+                    val startX = tempCol * (newImageWidth + margin) + margin
+                    val startY = tempRow * (newImageHeight + margin) + margin
+                    contentStream.drawImage(
+                        pdImage,
+                        startX.toFloat(),
+                        pageHeight - startY - newImageHeight.toFloat(),
+                        newImageWidth.toFloat(),
+                        newImageHeight.toFloat()
+                    )
+                    imageCount++
                 }
-
-                val tempCol = if (modo.contains("Retrato")) {
-                    row
-                } else {
-                    col
-                }
-                val tempRow = if (modo.contains("Retrato")) {
-                    col
-                } else {
-                    row
-                }
-
-                val startX = tempCol * (newImageWidth + margin) + margin
-                val startY = tempRow * (newImageHeight + margin) + margin
-                val destinationRect = RectF(
-                    startX.toFloat(),
-                    startY.toFloat(),
-                    (startX + newImageWidth).toFloat(),
-                    (startY + newImageHeight).toFloat()
-                )
-                contentStream.drawImage(
-                    pdImage,
-                    destinationRect.left,
-                    destinationRect.top,
-                    destinationRect.width(),
-                    destinationRect.height()
-                )
-                imageCount++
             }
         }
-        contentStream.close()
     }
 
     private fun pageToImage(pdfFile: File): MutableList<Bitmap> {
