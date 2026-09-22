@@ -3,11 +3,13 @@ import * as DocumentPicker from "expo-document-picker";
 import { EncodingType, StorageAccessFramework, writeAsStringAsync } from "expo-file-system/legacy";
 import { startActivityAsync } from "expo-intent-launcher";
 import { useState } from "react";
-import { FlatList, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { FlatList, NativeModules, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Icon from "@expo/vector-icons/FontAwesome";
+import MaterialCommunityIcon from "@expo/vector-icons/MaterialCommunityIcons";
 
 import { Button } from "./components/Button";
 import Dropdown from "./components/Dropdown";
+import Header from "./components/Header";
 import Modal from "./components/Modal";
 import UploadPreview from "./components/UploadPreview";
 import { useTheme } from "./theme";
@@ -75,68 +77,132 @@ export default function Home() {
     setDocument(prevDocuments => prevDocuments.filter((_, i) => i !== index));
   }
 
+  const hasDocuments = document && document.length > 0;
+
   return (
-    <>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Header />
+
       <Button onPress={pickDocument} text="Selecione um ou mais PDF ou imagem" showIcon={true} />
-      {document && document.length > 0 &&
+
+      {!hasDocuments && (
+        <View style={[styles.card, styles.emptyState, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <MaterialCommunityIcon name="file-outline" size={32} color={theme.textSecondary} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>Nenhum arquivo selecionado</Text>
+          <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+            Toque no botão acima para escolher PDFs ou imagens
+          </Text>
+        </View>
+      )}
+
+      {hasDocuments &&
         <>
-          <View style={{ maxHeight: 200 }}>
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+              {document.length} {document.length === 1 ? "arquivo selecionado" : "arquivos selecionados"}
+            </Text>
             <Text style={[styles.warning, { color: theme.danger }]}>Se desejar remover um item, basta clicar sobre ele.</Text>
             <FlatList
               data={document}
               renderItem={({ item, index }) => (
                 <TouchableOpacity
                   onPress={() => removerItem(index)}
-                  style={[styles.fileRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  style={[styles.fileRow, { backgroundColor: theme.background, borderColor: theme.border }]}
                 >
                   <UploadPreview fileName={item.name} previewImage={item.uri} />
-                  <Icon name="remove" size={22} color={theme.danger} />
+                  <Icon name="remove" size={20} color={theme.danger} />
                 </TouchableOpacity>
               )}
               keyExtractor={(item, index) => `${item.uri}-${index}`}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 10, width: "100%" }}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={false}
             />
           </View>
-          <Text style={[styles.text, { color: theme.text }]}>Selecione a quantidade de páginas por folha:</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
-            placeholder="Digite aqui..."
-            placeholderTextColor={theme.placeholder}
-            value={pages}
-            keyboardType="numeric"
-            onChangeText={(text) => {
-              const numericValue = text.replace(/[^0-9]/g, "");
-              setPages(numericValue);
-            }}
-          />
-          <Text style={[styles.text, { color: theme.text }]}>Selecione a orientação da folha:</Text>
-          <Dropdown array={dataModo} setValor={setModo} />
+
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.text, { color: theme.text }]}>Quantidade de páginas por folha</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
+              placeholder="Digite aqui..."
+              placeholderTextColor={theme.placeholder}
+              value={pages}
+              keyboardType="numeric"
+              onChangeText={(text) => {
+                const numericValue = text.replace(/[^0-9]/g, "");
+                setPages(numericValue);
+              }}
+            />
+            <Text style={[styles.text, { color: theme.text }]}>Orientação da folha</Text>
+            <Dropdown array={dataModo} setValor={setModo} />
+          </View>
+
           <Button onPress={continuarAcao} text="Gerar PDF" />
         </>}
       <Modal modalVisible={modalVisible} />
-    </>
+    </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 32,
+    alignItems: "center",
+  },
+  card: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  emptyState: {
+    paddingVertical: 28,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 10,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  sectionLabel: {
+    alignSelf: "flex-start",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
   warning: {
-    fontSize: 14,
-    marginBottom: 6,
+    alignSelf: "flex-start",
+    fontSize: 13,
+    marginBottom: 10,
   },
   fileRow: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginVertical: 5,
+    marginBottom: 8,
     borderWidth: 1,
     padding: 10,
     borderRadius: 10,
   },
   text: {
-    fontSize: 16,
+    alignSelf: "flex-start",
+    fontSize: 15,
     fontWeight: "700",
-    marginVertical: 10,
+    marginBottom: 8,
+    marginTop: 4,
   },
   input: {
     height: 44,
@@ -144,5 +210,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 12,
     borderRadius: 8,
+    marginBottom: 4,
   },
 });
