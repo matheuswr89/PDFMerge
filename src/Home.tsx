@@ -39,6 +39,8 @@ export default function Home() {
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [progress, setProgress] = useState<Progress>(null);
   const progressSubscription = useRef<{ remove: () => void } | null>(null);
+  const orientationDropdownRef = useRef<any>(null);
+  const qualityDropdownRef = useRef<any>(null);
 
   const pickDocument = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], multiple: true, copyToCacheDirectory: true });
@@ -91,6 +93,11 @@ export default function Home() {
         },
       );
       setDocument([]);
+      setPages("0");
+      setModo("");
+      setQuality("Média");
+      orientationDropdownRef.current?.reset();
+      qualityDropdownRef.current?.selectIndex(0);
       await startActivityAsync('android.intent.action.VIEW', {
         data: uri,
         flags: 1,
@@ -177,9 +184,9 @@ export default function Home() {
               }}
             />
             <Text style={[styles.text, { color: theme.text }]}>Orientação da folha</Text>
-            <Dropdown array={dataModo} setValor={setModo} />
+            <Dropdown ref={orientationDropdownRef} array={dataModo} setValor={setModo} />
             <Text style={[styles.text, { color: theme.text }]}>Qualidade das imagens</Text>
-            <Dropdown array={dataQualidade} setValor={setQuality} />
+            <Dropdown ref={qualityDropdownRef} array={dataQualidade} setValor={setQuality} />
           </View>
 
           <Button onPress={continuarAcao} text="Gerar PDF" />

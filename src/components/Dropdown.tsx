@@ -1,14 +1,16 @@
+import { forwardRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import SelectDropdown from "react-native-select-dropdown";
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
 import { useTheme } from "../theme";
 
-export default function Dropdown({ array, setValor }: any) {
+const Dropdown = forwardRef<any, any>(({ array, setValor }, ref) => {
   const theme = useTheme();
 
   return (
     <SelectDropdown
+      ref={ref}
       defaultValue={array[0]}
       data={array}
       onSelect={(selectedItem, index) => {
@@ -35,7 +37,9 @@ export default function Dropdown({ array, setValor }: any) {
       dropdownStyle={[styles.dropdownMenuStyle, { backgroundColor: theme.dropdownBackground }]}
     />
   )
-}
+});
+
+export default Dropdown;
 
 const styles = StyleSheet.create({
   dropdownButtonStyle: {
