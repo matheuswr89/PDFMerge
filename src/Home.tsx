@@ -28,9 +28,15 @@ export default function Home() {
   const [modalVisible, setModalVisible] = useState<boolean>(false);
 
   const pickDocument = async () => {
-    let result: any = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], multiple: true, copyToCacheDirectory: true });
-    let newArray = result.assets
-    setDocument(newArray);
+    const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], multiple: true, copyToCacheDirectory: true });
+    if (result.canceled || !result.assets) {
+      return;
+    }
+    setDocument(prevDocuments => {
+      const existingUris = new Set(prevDocuments.map(doc => doc.uri));
+      const newAssets = result.assets.filter(asset => !existingUris.has(asset.uri));
+      return [...prevDocuments, ...newAssets];
+    });
   }
 
   const continuarAcao = async () => {
