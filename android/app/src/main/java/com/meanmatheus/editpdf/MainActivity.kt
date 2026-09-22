@@ -7,6 +7,7 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 import expo.modules.ReactActivityDelegateWrapper
@@ -16,8 +17,7 @@ class MainActivity : ReactActivity() {
     // Set the theme to AppTheme BEFORE onCreate to support
     // coloring the background, status bar, and navigation bar.
     // This is required for expo-splash-screen.
-
-      PDFBoxResourceLoader.init(applicationContext);
+    PDFBoxResourceLoader.init(applicationContext);
     setTheme(R.style.AppTheme);
     super.onCreate(null)
   }

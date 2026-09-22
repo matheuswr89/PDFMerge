@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import SelectDropdown from "react-native-select-dropdown";
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
 export default function Dropdown({ array, setValor }: any) {
   return (

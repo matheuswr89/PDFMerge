@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
 export const Button = ({ onPress, text, showIcon }: any) => {
   return (

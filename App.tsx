@@ -27,10 +27,13 @@ export default function App() {
         const exists = await checkIfFolderExists(localFolder);
         if (!exists) {
           await AsyncStorage.removeItem("@editpdf:LOCAL");
-          requestPermissions();
+          await requestPermissions();
+        } else {
+          setLoading(false);
         }
-      } else requestPermissions();
-      setLoading(false);
+      } else {
+        await requestPermissions();
+      }
     }
 
     folderExists();

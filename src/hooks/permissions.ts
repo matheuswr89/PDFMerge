@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { StorageAccessFramework } from "expo-file-system";
+import { StorageAccessFramework } from "expo-file-system/legacy";
 import { PermissionsAndroid } from "react-native";
 
 const getPermissions = async () => {

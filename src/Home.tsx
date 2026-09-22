@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
-import { EncodingType, StorageAccessFramework, writeAsStringAsync } from "expo-file-system";
+import { EncodingType, StorageAccessFramework, writeAsStringAsync } from "expo-file-system/legacy";
 import { startActivityAsync } from "expo-intent-launcher";
 import { useState } from "react";
 import { FlatList, NativeModules, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import Icon from "react-native-vector-icons/FontAwesome";
+import Icon from "@expo/vector-icons/FontAwesome";
 
 import { Button } from "./components/Button";
 import Dropdown from "./components/Dropdown";
@@ -30,36 +30,43 @@ export default function Home() {
   }
 
   const continuarAcao = async () => {
-    if (pages === 0 || pages === "") {
+    if (Number(pages) === 0 || pages === "") {
       alert(`Selecione uma quantidade de páginas por folha!`)
       return;
     }
 
     setModalVisible(true);
-    const uris = document.map(doc => doc.uri)
-    const allPages = await NativeModules.PdfModule.editPdf(uris, Number(pages), modo)
-    const localFolder: any = await AsyncStorage.getItem('@editpdf:LOCAL');
+    try {
+      const uris = document.map(doc => doc.uri)
+      const allPages = await NativeModules.PdfModule.editPdf(uris, Number(pages), modo)
+      const localFolder: any = await AsyncStorage.getItem('@editpdf:LOCAL');
 
-    if (String(allPages).match("ERROR")) {
-      setModalVisible(false);
+      if (!localFolder) {
+        alert("Nenhuma pasta de destino selecionada.")
+        return;
+      }
+
+      const baseName = document[0].name.replace(/\.pdf$/i, "");
+      const uri = await StorageAccessFramework.createFileAsync(localFolder, `MERGED_${baseName}.pdf`, "application/pdf");
+      await writeAsStringAsync(
+        uri,
+        allPages,
+        {
+          encoding: EncodingType.Base64,
+        },
+      );
+      setDocument([]);
+      await startActivityAsync('android.intent.action.VIEW', {
+        data: uri,
+        flags: 1,
+        type: "application/pdf",
+      });
+    } catch (error) {
+      console.error("Erro ao gerar o PDF:", error);
       alert("Ocorreu um erro ao gerar o PDF.")
-      return;
+    } finally {
+      setModalVisible(false);
     }
-
-    const uri = await StorageAccessFramework.createFileAsync(localFolder, `MERGED_${document[0].name}.pdf`, "application/pdf");
-    await writeAsStringAsync(
-      uri,
-      allPages,
-      {
-        encoding: EncodingType.Base64,
-      },
-    ).then(() => setDocument([]));
-    setModalVisible(false);
-    await startActivityAsync('android.intent.action.VIEW', {
-      data: uri,
-      flags: 1,
-      type: "application/pdf",
-    });
   }
 
   function removerItem(index: number) {
@@ -81,7 +88,7 @@ export default function Home() {
                   <Icon name="remove" size={24} color="red" />
                 </TouchableOpacity>
               )}
-              keyExtractor={(item) => item.name}
+              keyExtractor={(item, index) => `${item.uri}-${index}`}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 10, width: "100%" }}
             />

@@ -21,9 +21,7 @@ class FileUtils {
     fun deleteFiles(context: ReactApplicationContext) {
         val directory = File(context.cacheDir.absolutePath.toString() + "/DocumentPicker")
         val files = directory.listFiles()
-        for (f in files!!) {
-            f.delete()
-        }
+        files?.forEach { f -> f.delete() }
         val file = File(context.cacheDir, "image_grid.pdf")
         if (file.exists()) file.delete()
     }
