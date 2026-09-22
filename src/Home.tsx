@@ -10,6 +10,7 @@ import { Button } from "./components/Button";
 import Dropdown from "./components/Dropdown";
 import Modal from "./components/Modal";
 import UploadPreview from "./components/UploadPreview";
+import { useTheme } from "./theme";
 
 let dataModo = [
   { title: 'Selecione...', },
@@ -18,6 +19,7 @@ let dataModo = [
 ];
 
 export default function Home() {
+  const theme = useTheme();
   const [document, setDocument] = useState<any[]>([]);
   const [pages, setPages] = useState<any>("0");
   const [modo, setModo] = useState<any>("0");
@@ -79,13 +81,16 @@ export default function Home() {
       {document && document.length > 0 &&
         <>
           <View style={{ maxHeight: 200 }}>
-            <Text style={{ color: "red", fontSize: 16 }}>Se desejar remover um item, basta clicar sobre ele.</Text>
+            <Text style={[styles.warning, { color: theme.danger }]}>Se desejar remover um item, basta clicar sobre ele.</Text>
             <FlatList
               data={document}
               renderItem={({ item, index }) => (
-                <TouchableOpacity onPress={() => removerItem(index)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 5, borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 10 }}>
+                <TouchableOpacity
+                  onPress={() => removerItem(index)}
+                  style={[styles.fileRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                >
                   <UploadPreview fileName={item.name} previewImage={item.uri} />
-                  <Icon name="remove" size={24} color="red" />
+                  <Icon name="remove" size={22} color={theme.danger} />
                 </TouchableOpacity>
               )}
               keyExtractor={(item, index) => `${item.uri}-${index}`}
@@ -93,10 +98,11 @@ export default function Home() {
               contentContainerStyle={{ paddingHorizontal: 10, width: "100%" }}
             />
           </View>
-          <Text style={styles.text}>Selecione a quantidade de páginas por folha:</Text>
+          <Text style={[styles.text, { color: theme.text }]}>Selecione a quantidade de páginas por folha:</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
             placeholder="Digite aqui..."
+            placeholderTextColor={theme.placeholder}
             value={pages}
             keyboardType="numeric"
             onChangeText={(text) => {
@@ -104,7 +110,7 @@ export default function Home() {
               setPages(numericValue);
             }}
           />
-          <Text style={styles.text}>Selecione a orientação da folha:</Text>
+          <Text style={[styles.text, { color: theme.text }]}>Selecione a orientação da folha:</Text>
           <Dropdown array={dataModo} setValor={setModo} />
           <Button onPress={continuarAcao} text="Gerar PDF" />
         </>}
@@ -114,17 +120,29 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
+  warning: {
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  fileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginVertical: 5,
+    borderWidth: 1,
+    padding: 10,
+    borderRadius: 10,
+  },
   text: {
     fontSize: 16,
-    fontWeight: "900",
+    fontWeight: "700",
     marginVertical: 10,
   },
   input: {
-    height: 40,
+    height: 44,
     width: 200,
-    borderColor: "gray",
     borderWidth: 1,
-    paddingHorizontal: 10,
-    borderRadius: 5,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
 });

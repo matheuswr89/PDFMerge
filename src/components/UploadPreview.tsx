@@ -1,24 +1,29 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
+import { useTheme } from '../theme';
+
 const UploadPreview = ({ fileName }: any) => {
+  const theme = useTheme();
+
   return (
     <View style={styles.container}>
-      <Icon name={fileName.endsWith(".pdf")? "file-pdf-box": "file-image"} size={20}/>
-      <Text style={styles.fileName}>{fileName}</Text>
+      <Icon name={fileName.endsWith(".pdf") ? "file-pdf-box" : "file-image"} size={20} color={theme.text} />
+      <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={1}>{fileName}</Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    justifyContent: "center",
+    alignItems: "center",
     flexDirection: 'row',
-    width: 200,
-    marginTop: 10
+    flex: 1,
+    marginTop: 10,
+    gap: 8,
   },
   fileName: {
+    flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
   },

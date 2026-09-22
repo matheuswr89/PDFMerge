@@ -1,16 +1,20 @@
-import { Modal as ReactNativeModal, StyleSheet, Text, Pressable, View, ActivityIndicator } from 'react-native';
+import { Modal as ReactNativeModal, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 
+import { useTheme } from '../theme';
 
 export default function Modal({ modalVisible }: any) {
+  const theme = useTheme();
+
   return (
       <ReactNativeModal animationType="fade"
-        transparent={false}
+        transparent={true}
         visible={modalVisible}>
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.modalText}>Aguarde o PDF ser gerado...</Text>
-          </View></View>
+        <View style={[styles.centeredView, { backgroundColor: theme.modalOverlay }]}>
+          <View style={[styles.modalView, { backgroundColor: theme.surface }]}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.modalText, { color: theme.text }]}>Aguarde o PDF ser gerado...</Text>
+          </View>
+        </View>
       </ReactNativeModal>
   )
 }
@@ -23,7 +27,6 @@ const styles = StyleSheet.create({
   },
   modalView: {
     margin: 20,
-    backgroundColor: 'white',
     borderRadius: 20,
     padding: 35,
     alignItems: 'center',
@@ -37,7 +40,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   modalText: {
-    marginBottom: 15,
+    marginTop: 15,
     textAlign: 'center',
   },
 })

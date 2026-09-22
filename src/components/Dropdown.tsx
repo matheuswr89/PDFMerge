@@ -2,7 +2,11 @@ import { StyleSheet, Text, View } from "react-native";
 import SelectDropdown from "react-native-select-dropdown";
 import Icon from '@expo/vector-icons/MaterialCommunityIcons';
 
+import { useTheme } from "../theme";
+
 export default function Dropdown({ array, setValor }: any) {
+  const theme = useTheme();
+
   return (
     <SelectDropdown
       defaultValue={array[0]}
@@ -12,23 +16,23 @@ export default function Dropdown({ array, setValor }: any) {
       }}
       renderButton={(selectedItem, isOpened) => {
         return (
-          <View style={styles.dropdownButtonStyle}>
-            <Text style={styles.dropdownButtonTxtStyle}>
+          <View style={[styles.dropdownButtonStyle, { backgroundColor: theme.dropdownBackground }]}>
+            <Text style={[styles.dropdownButtonTxtStyle, { color: theme.text }]}>
               {(selectedItem && selectedItem.title) || 'Selecione...'}
             </Text>
-            <Icon name={isOpened ? 'chevron-up' : 'chevron-down'} style={styles.dropdownButtonArrowStyle} />
+            <Icon name={isOpened ? 'chevron-up' : 'chevron-down'} style={[styles.dropdownButtonArrowStyle, { color: theme.text }]} />
           </View>
         );
       }}
       renderItem={(item, index, isSelected) => {
         return (
-          <View style={{ ...styles.dropdownItemStyle, ...(isSelected && { backgroundColor: '#D2D9DF' }) }}>
-            <Text style={styles.dropdownItemTxtStyle}>{item.title}</Text>
+          <View style={[styles.dropdownItemStyle, { backgroundColor: isSelected ? theme.dropdownItemSelected : theme.dropdownBackground }]}>
+            <Text style={[styles.dropdownItemTxtStyle, { color: theme.text }]}>{item.title}</Text>
           </View>
         );
       }}
       showsVerticalScrollIndicator={false}
-      dropdownStyle={styles.dropdownMenuStyle}
+      dropdownStyle={[styles.dropdownMenuStyle, { backgroundColor: theme.dropdownBackground }]}
     />
   )
 }
@@ -37,7 +41,6 @@ const styles = StyleSheet.create({
   dropdownButtonStyle: {
     width: 200,
     height: 50,
-    backgroundColor: '#E9ECEF',
     borderRadius: 12,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -48,7 +51,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '500',
-    color: '#151E26',
   },
   dropdownButtonArrowStyle: {
     fontSize: 28,
@@ -58,7 +60,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   dropdownMenuStyle: {
-    backgroundColor: '#E9ECEF',
     borderRadius: 8,
     marginTop: -40
   },
@@ -74,6 +75,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '500',
-    color: '#151E26',
   },
 });
