@@ -24,7 +24,7 @@ export default function Home() {
   const theme = useTheme();
   const [document, setDocument] = useState<any[]>([]);
   const [pages, setPages] = useState<any>("0");
-  const [modo, setModo] = useState<any>("0");
+  const [modo, setModo] = useState<any>("");
   const [modalVisible, setModalVisible] = useState<boolean>(false);
 
   const pickDocument = async () => {
@@ -36,6 +36,11 @@ export default function Home() {
   const continuarAcao = async () => {
     if (Number(pages) === 0 || pages === "") {
       alert(`Selecione uma quantidade de páginas por folha!`)
+      return;
+    }
+
+    if (!modo || modo === "Selecione...") {
+      alert(`Selecione a orientação da folha!`)
       return;
     }
 
