@@ -2,16 +2,20 @@ package com.meanmatheus.editpdf
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.os.ParcelFileDescriptor.MODE_READ_ONLY
 import android.util.Base64
 import android.util.Log
+import androidx.exifinterface.media.ExifInterface
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -23,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import kotlin.math.ceil
@@ -35,25 +38,71 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
     private val fileUtils = FileUtils()
     private val ioScope = CoroutineScope(Dispatchers.IO)
 
+    // Limite de segurança para o PDF final: strings base64 muito grandes consomem
+    // memória em dobro (bytes crus + string base64) ao atravessar a bridge do RN.
+    private val MAX_OUTPUT_SIZE_BYTES = 80L * 1024 * 1024 // 80MB
+
     // Tipos de orientação de página
     enum class PageOrientation {
         PORTRAIT, LANDSCAPE
+    }
+
+    // Configurações de resolução/compressão por nível de qualidade escolhido pelo usuário
+    private data class QualitySettings(
+        val maxDimension: Int,
+        val qualityNormal: Int,
+        val qualityLarge: Int,
+        val qualityHuge: Int
+    )
+
+    private fun resolveQualitySettings(quality: String?): QualitySettings {
+        return when (quality?.lowercase()) {
+            "alta", "high" -> QualitySettings(maxDimension = 2200, qualityNormal = 95, qualityLarge = 90, qualityHuge = 85)
+            "baixa", "low" -> QualitySettings(maxDimension = 1000, qualityNormal = 75, qualityLarge = 65, qualityHuge = 55)
+            else -> QualitySettings(maxDimension = 1500, qualityNormal = 90, qualityLarge = 80, qualityHuge = 70) // "media"/"medium"
+        }
     }
 
     override fun getName(): String {
         return "PdfModule"
     }
 
+    // Necessário para o RN reconhecer este módulo como um emissor de eventos (NativeEventEmitter)
     @ReactMethod
-    fun editPdf(paths: ReadableArray, imagesPerPage: Int, orientationMode: String, promise: Promise) {
+    fun addListener(eventName: String) {
+        // no-op: exigido pela interface de EventEmitter do React Native
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+        // no-op: exigido pela interface de EventEmitter do React Native
+    }
+
+    private fun emitProgress(processed: Int, total: Int) {
+        try {
+            val params = Arguments.createMap().apply {
+                putInt("processed", processed)
+                putInt("total", total)
+            }
+            reactApplicationContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("PdfModuleProgress", params)
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to emit progress event", e)
+        }
+    }
+
+    @ReactMethod
+    fun editPdf(paths: ReadableArray, imagesPerPage: Int, orientationMode: String, quality: String, promise: Promise) {
         ioScope.launch {
             try {
                 val outputFile = File(reactApplicationContext.cacheDir, "image_grid.pdf")
                 val pathsList = paths.toArrayList().map { it as String }
                 val orientation = if (orientationMode.contains("Retrato"))
                     PageOrientation.PORTRAIT else PageOrientation.LANDSCAPE
+                val qualitySettings = resolveQualitySettings(quality)
 
-                val document = createPdfWithImages(pathsList, imagesPerPage, orientation)
+                val document = createPdfWithImages(pathsList, imagesPerPage, orientation, qualitySettings)
                 saveAndReturnDocument(document, outputFile, promise)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing PDF", e)
@@ -69,9 +118,12 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
     private suspend fun createPdfWithImages(
         paths: List<String>,
         imagesPerPage: Int,
-        orientation: PageOrientation
+        orientation: PageOrientation,
+        qualitySettings: QualitySettings
     ): PDDocument = withContext(Dispatchers.IO) {
         val document = PDDocument()
+        val total = paths.size
+        var processedCount = 0
 
         // Processar arquivos em lotes para evitar problemas de memória
         val batchSize = 2 // Processar 2 arquivos por vez
@@ -83,7 +135,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                     if (it.name.endsWith(".pdf", ignoreCase = true)) {
                         // Process PDF file com otimizações para arquivos grandes
                         try {
-                            processPdfFile(it, document, imagesPerPage, orientation)
+                            processPdfFile(it, document, imagesPerPage, orientation, qualitySettings)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error processing PDF file: ${it.absolutePath}", e)
                         }
@@ -97,7 +149,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                             BitmapFactory.decodeFile(it.absolutePath, options)
 
                             // Calcular fator de amostragem para reduzir tamanho
-                            val sampleSize = calculateInSampleSize(options, 1500, 1500) // limite máximo 1500x1500
+                            val sampleSize = calculateInSampleSize(options, qualitySettings.maxDimension, qualitySettings.maxDimension)
 
                             options.apply {
                                 inJustDecodeBounds = false
@@ -105,8 +157,10 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                                 inPreferredConfig = Bitmap.Config.RGB_565 // Usa menos memória que ARGB_8888
                             }
 
-                            val image = BitmapFactory.decodeFile(it.absolutePath, options)
-                            addImageToDocument(image, document, imagesPerPage, orientation)
+                            var image = BitmapFactory.decodeFile(it.absolutePath, options)
+                            // Corrige a orientação de fotos tiradas com a câmera (metadado EXIF)
+                            image = rotateBitmapIfNeeded(image, it.absolutePath)
+                            addImageToDocument(image, document, imagesPerPage, orientation, qualitySettings)
                             // Reciclar bitmap após uso
                             image.recycle()
                         } catch (e: Exception) {
@@ -114,13 +168,50 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                         }
                     }
                 } ?: Log.w(TAG, "Unable to resolve file path: $path")
-            }
 
-            // Forçar garbage collection após cada lote
-            System.gc()
+                processedCount++
+                emitProgress(processedCount, total)
+            }
         }
 
         document
+    }
+
+    /**
+     * Aplica a rotação/espelhamento indicado pelo metadado EXIF da imagem, se houver,
+     * para que fotos tiradas em pé (retrato) não apareçam deitadas no PDF final.
+     */
+    private fun rotateBitmapIfNeeded(bitmap: Bitmap, imagePath: String): Bitmap {
+        return try {
+            val exif = ExifInterface(imagePath)
+            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                    matrix.postRotate(90f)
+                    matrix.postScale(-1f, 1f)
+                }
+                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                    matrix.postRotate(270f)
+                    matrix.postScale(-1f, 1f)
+                }
+                else -> return bitmap
+            }
+
+            val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated !== bitmap) {
+                bitmap.recycle()
+            }
+            rotated
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to read EXIF orientation for $imagePath", e)
+            bitmap
+        }
     }
 
     // Modifique o método processPdfFile para usar ARGB_8888 ao invés de RGB_565
@@ -128,7 +219,8 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
         pdfFile: File,
         outputDocument: PDDocument,
         imagesPerPage: Int,
-        orientation: PageOrientation
+        orientation: PageOrientation,
+        qualitySettings: QualitySettings
     ) = withContext(Dispatchers.IO) {
         try {
             ParcelFileDescriptor.open(pdfFile, MODE_READ_ONLY).use { fileDescriptor ->
@@ -148,7 +240,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                         for (i in batchStart until batchEnd) {
                             renderer.openPage(i).use { page ->
                                 // Determinar a resolução adequada
-                                val maxDimension = 1500 // Limitar a dimensão máxima
+                                val maxDimension = qualitySettings.maxDimension
                                 val scale = min(
                                     maxDimension.toFloat() / page.width,
                                     maxDimension.toFloat() / page.height
@@ -165,7 +257,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                                 )
 
                                 // Configurar matriz de transformação para escala
-                                val matrix = android.graphics.Matrix()
+                                val matrix = Matrix()
                                 matrix.setScale(scale, scale)
 
                                 page.render(
@@ -181,31 +273,28 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
 
                         // Adiciona as páginas renderizadas ao documento
                         pageBitmaps.forEach { bitmap ->
-                            addImageToDocument(bitmap, outputDocument, imagesPerPage, orientation)
+                            addImageToDocument(bitmap, outputDocument, imagesPerPage, orientation, qualitySettings)
                             bitmap.recycle() // Libera memória imediatamente
                         }
-
-                        // Força GC após cada lote de páginas
-                        System.gc()
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error processing PDF file", e)
             // Tenta processar o PDF com PDFBox como alternativa
-            tryProcessWithPdfBox(pdfFile, outputDocument, imagesPerPage, orientation)
+            tryProcessWithPdfBox(pdfFile, outputDocument, imagesPerPage, orientation, qualitySettings)
         }
     }
 
     // Também modifique renderPdfPageToImage para usar ARGB_8888
-    private fun renderPdfPageToImage(pdfFile: File): Bitmap? {
+    private fun renderPdfPageToImage(pdfFile: File, qualitySettings: QualitySettings): Bitmap? {
         try {
             ParcelFileDescriptor.open(pdfFile, MODE_READ_ONLY).use { fileDescriptor ->
                 PdfRenderer(fileDescriptor).use { renderer ->
                     if (renderer.pageCount > 0) {
                         renderer.openPage(0).use { page ->
                             // Determinar a resolução adequada
-                            val maxDimension = 1500
+                            val maxDimension = qualitySettings.maxDimension
                             val scale = min(
                                 maxDimension.toFloat() / page.width,
                                 maxDimension.toFloat() / page.height
@@ -222,7 +311,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                             )
 
                             // Configurar matriz de transformação para escala
-                            val matrix = android.graphics.Matrix()
+                            val matrix = Matrix()
                             matrix.setScale(scale, scale)
 
                             page.render(
@@ -251,7 +340,8 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
         pdfFile: File,
         outputDocument: PDDocument,
         imagesPerPage: Int,
-        orientation: PageOrientation
+        orientation: PageOrientation,
+        qualitySettings: QualitySettings
     ) {
         try {
             // Carregar o PDF usando PDFBox
@@ -267,7 +357,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                         try {
                             // Criar um novo documento apenas com essa página
                             val singlePageDoc = PDDocument()
-                            val importedPage = singlePageDoc.importPage(sourceDoc.getPage(pageIndex))
+                            singlePageDoc.importPage(sourceDoc.getPage(pageIndex))
 
                             // Salvar temporariamente
                             val tempFile = File(reactApplicationContext.cacheDir, "temp_page_$pageIndex.pdf")
@@ -275,11 +365,11 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                             singlePageDoc.close()
 
                             // Agora usar o PdfRenderer para renderizar esse PDF de uma página
-                            val pageBitmap = renderPdfPageToImage(tempFile)
+                            val pageBitmap = renderPdfPageToImage(tempFile, qualitySettings)
 
                             // Adicionar ao documento final
                             if (pageBitmap != null) {
-                                addImageToDocument(pageBitmap, outputDocument, imagesPerPage, orientation)
+                                addImageToDocument(pageBitmap, outputDocument, imagesPerPage, orientation, qualitySettings)
                                 pageBitmap.recycle()
                             }
 
@@ -289,9 +379,6 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                             Log.e(TAG, "Error processing page $pageIndex", e)
                         }
                     }
-
-                    // Força GC após cada lote
-                    System.gc()
                 }
             }
         } catch (e: Exception) {
@@ -316,7 +403,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
         return inSampleSize
     }
 
-    private fun createPDImageFromBitmap(bitmap: Bitmap, document: PDDocument): PDImageXObject {
+    private fun createPDImageFromBitmap(bitmap: Bitmap, document: PDDocument, qualitySettings: QualitySettings): PDImageXObject {
         val outputStream = ByteArrayOutputStream()
 
         // Determinar o melhor formato de compressão baseado no tipo da imagem
@@ -329,9 +416,9 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
             // Reduzir qualidade de compressão para imagens muito grandes
             val isLargeImage = bitmap.width * bitmap.height > 4_000_000 // >4MP
             val quality = when {
-                bitmap.width * bitmap.height > 8_000_000 -> 70 // Imagens muito grandes (>8MP)
-                isLargeImage -> 80 // Imagens grandes (4-8MP)
-                else -> 90 // Imagens normais
+                bitmap.width * bitmap.height > 8_000_000 -> qualitySettings.qualityHuge // Imagens muito grandes (>8MP)
+                isLargeImage -> qualitySettings.qualityLarge // Imagens grandes (4-8MP)
+                else -> qualitySettings.qualityNormal // Imagens normais
             }
 
             bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
@@ -378,40 +465,12 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
         return false
     }
 
-    private fun convertPdfToImages(pdfFile: File): List<Bitmap> {
-        val images = mutableListOf<Bitmap>()
-
-        try {
-            ParcelFileDescriptor.open(pdfFile, MODE_READ_ONLY).use { fileDescriptor ->
-                PdfRenderer(fileDescriptor).use { renderer ->
-                    for (i in 0 until renderer.pageCount) {
-                        renderer.openPage(i).use { page ->
-                            // Limitar o tamanho máximo da imagem para PDFs também
-                            val scale = 2 // Fator de escala para qualidade adequada
-                            val bitmap = Bitmap.createBitmap(
-                                page.width * scale,
-                                page.height * scale,
-                                Bitmap.Config.RGB_565 // Usar formato que consome menos memória
-                            )
-
-                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            images.add(bitmap)
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error converting PDF to images", e)
-        }
-
-        return images
-    }
-
     private fun addImageToDocument(
         image: Bitmap,
         document: PDDocument,
         imagesPerPage: Int,
-        orientation: PageOrientation
+        orientation: PageOrientation,
+        qualitySettings: QualitySettings
     ) {
         Log.d(TAG, "Processing image: ${image.width}x${image.height}, format: ${image.config}")
 
@@ -449,7 +508,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
         Log.d(TAG, "Image scaling: scale=$scale, final size=${imageWidth}x${imageHeight}")
 
         // Convert bitmap to PDImageXObject
-        val pdImage = createPDImageFromBitmap(image, document)
+        val pdImage = createPDImageFromBitmap(image, document, qualitySettings)
 
         try {
             PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true, true).use { contentStream ->
@@ -597,11 +656,20 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
                 out.flush()
             }
 
-            val base64String = FileInputStream(outputFile).use { input ->
-                val bytes = ByteArray(outputFile.length().toInt())
-                input.read(bytes)
-                Base64.encodeToString(bytes, Base64.DEFAULT)
+            if (outputFile.length() > MAX_OUTPUT_SIZE_BYTES) {
+                withContext(Dispatchers.Main) {
+                    promise.reject(
+                        "PDF_TOO_LARGE",
+                        "O PDF gerado (${outputFile.length() / (1024 * 1024)}MB) é grande demais para ser " +
+                            "transferido. Tente reduzir a qualidade, a quantidade de páginas por folha ou " +
+                            "dividir a seleção em grupos menores."
+                    )
+                }
+                return@withContext
             }
+
+            val bytes = outputFile.readBytes()
+            val base64String = Base64.encodeToString(bytes, Base64.NO_WRAP)
 
             withContext(Dispatchers.Main) {
                 promise.resolve(base64String)

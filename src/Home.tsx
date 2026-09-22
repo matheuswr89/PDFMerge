@@ -2,8 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import { EncodingType, StorageAccessFramework, writeAsStringAsync } from "expo-file-system/legacy";
 import { startActivityAsync } from "expo-intent-launcher";
-import { useState } from "react";
-import { FlatList, NativeModules, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { FlatList, NativeEventEmitter, NativeModules, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Icon from "@expo/vector-icons/FontAwesome";
 import MaterialCommunityIcon from "@expo/vector-icons/MaterialCommunityIcons";
 
@@ -20,12 +20,25 @@ let dataModo = [
   { title: 'Paisagem', }
 ];
 
+// "Média" precisa ser o primeiro item: o Dropdown sempre exibe array[0] como
+// valor inicial, e é esse o padrão que o estado `quality` já assume.
+let dataQualidade = [
+  { title: 'Média', },
+  { title: 'Baixa', },
+  { title: 'Alta', },
+];
+
+type Progress = { processed: number; total: number } | null;
+
 export default function Home() {
   const theme = useTheme();
   const [document, setDocument] = useState<any[]>([]);
   const [pages, setPages] = useState<any>("0");
   const [modo, setModo] = useState<any>("");
+  const [quality, setQuality] = useState<any>("Média");
   const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [progress, setProgress] = useState<Progress>(null);
+  const progressSubscription = useRef<{ remove: () => void } | null>(null);
 
   const pickDocument = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], multiple: true, copyToCacheDirectory: true });
@@ -50,10 +63,17 @@ export default function Home() {
       return;
     }
 
+    setProgress({ processed: 0, total: document.length });
     setModalVisible(true);
+
+    const emitter = new NativeEventEmitter(NativeModules.PdfModule);
+    progressSubscription.current = emitter.addListener("PdfModuleProgress", (event: Progress) => {
+      setProgress(event);
+    });
+
     try {
       const uris = document.map(doc => doc.uri)
-      const allPages = await NativeModules.PdfModule.editPdf(uris, Number(pages), modo)
+      const allPages = await NativeModules.PdfModule.editPdf(uris, Number(pages), modo, quality)
       const localFolder: any = await AsyncStorage.getItem('@editpdf:LOCAL');
 
       if (!localFolder) {
@@ -80,9 +100,18 @@ export default function Home() {
       console.error("Erro ao gerar o PDF:", error);
       alert("Ocorreu um erro ao gerar o PDF.")
     } finally {
+      progressSubscription.current?.remove();
+      progressSubscription.current = null;
       setModalVisible(false);
+      setProgress(null);
     }
   }
+
+  useEffect(() => {
+    return () => {
+      progressSubscription.current?.remove();
+    };
+  }, []);
 
   function removerItem(index: number) {
     setDocument(prevDocuments => prevDocuments.filter((_, i) => i !== index));
@@ -149,11 +178,13 @@ export default function Home() {
             />
             <Text style={[styles.text, { color: theme.text }]}>Orientação da folha</Text>
             <Dropdown array={dataModo} setValor={setModo} />
+            <Text style={[styles.text, { color: theme.text }]}>Qualidade das imagens</Text>
+            <Dropdown array={dataQualidade} setValor={setQuality} />
           </View>
 
           <Button onPress={continuarAcao} text="Gerar PDF" />
         </>}
-      <Modal modalVisible={modalVisible} />
+      <Modal modalVisible={modalVisible} progress={progress} />
     </ScrollView>
   )
 }
