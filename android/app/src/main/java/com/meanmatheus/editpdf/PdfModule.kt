@@ -489,7 +489,7 @@ class PdfModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
         Log.d(TAG, "Optimal grid layout: $rows rows × $cols columns for ${orientation.name}")
 
         // Define margins and calculate available space
-        val margin = 4f
+        val margin = 0.5f
         val availableWidth = pageWidth - (margin * 2)
         val availableHeight = pageHeight - (margin * 2)
 
